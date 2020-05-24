@@ -1,4 +1,6 @@
 const express = require('express');
+const bcrypt = require('bcrypt');
+const {pool } = require("./dbConfig")
 var bodyParser = require('body-parser');
 const { check, validationResult } = require('express-validator');
 const app = express();
@@ -8,7 +10,7 @@ app.use(bodyParser.urlencoded({ extended: true })); // support encoded bodies
 
 
 //Registering User
-app.post("/users/register",(req,res) => {
+app.post("/users/register",async (req,res) => {
     let {name, email, password, password2} = req.body
 
     let errors = []
@@ -29,11 +31,12 @@ app.post("/users/register",(req,res) => {
         errors.push("password2 is required.")
     }
 
-    if(password.length < 6){
+    if(password && password.length < 6){
         errors.push("password must be greater than 6 character.")
     }
 
-    if(!check(email).isEmail()) {
+
+    if(!isValidEmail(email)) {
         errors.push("email is invalid.")
     }
 
@@ -52,19 +55,49 @@ app.post("/users/register",(req,res) => {
 
     } else {
         
-         //Creating user and sending success message
-         res.status(200).json({
-             code : 200,
-             message : "User created successfully."
-         })
-    }
 
+        //Check if already exists or not
+        pool.query(
+            `SELECT * FROM users WHERE email  = $1 `, [email],async (err,queryResults) => {
+                   if(err) {
+                       throw err;
+                   }
+
+                   if(queryResults.rowCount>0){
+                    res.status(400).json({
+                        code : 400,
+                        message : "This email is already registred."
+                    })
+                   } else {
+                       //Creating user and sending success message
+                        let hasedPassword = await bcrypt.hash(password,10)
+                       pool.query(`INSERT INTO users (name,email,password) VALUES ($1 ,$2 ,$3)`, [name,email,hasedPassword], (err,queryResults) => {
+                                if(err){
+                                    res.status(400).json({
+                                        code : 400,
+                                        message : err.message
+                                    })
+                                } else {
+                                    res.status(200).json({
+                                        code : 200,
+                                        message : "User Created successfully",
+                                        data : queryResults[0]
+                                    })
+                                }
+                            }
+                       );
+                   }
+            }
+        )    
+    }
 
 });
 
 
 
-
+function isValidEmail( value ) {
+	return /^[\w\-\.\+]+\@[a-zA-Z0-9\.\-]+\.[a-zA-z0-9]{2,5}$/.test( value );
+}
 
 
 
